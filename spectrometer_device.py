@@ -84,6 +84,13 @@ class SpectrometerDevice:
             print("Temperature read error:", e)
 
             return None
+        
+    def set_cooler(self, state):
+    
+        try:
+            self.cam.set_cooler(state)
+        except Exception as e:
+            print("Cooler control error:", e)
 
 
     def close(self):
