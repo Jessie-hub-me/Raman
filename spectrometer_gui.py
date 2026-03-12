@@ -271,23 +271,24 @@ class SpectrometerGUI(QWidget):
             print("Temperature read error")
             
     def check_shutdown_temperature(self):
-
+    
         try:
-
             temp = self.device.get_temperature()
-
             print(f"CCD temperature: {temp:.2f} °C")
-
-            if temp >= 0:
-
+    
+            if temp > 0:
+    
                 print("CCD warmed up. Safe to close.")
-
+    
                 self.shutdown_timer.stop()
-
+    
+                print("Closing spectrometer hardware...")
                 self.device.close()
-
-                self.close()  # close GUI
-
+    
+                # 直接退出 GUI
+                from PyQt5.QtWidgets import QApplication
+                QApplication.quit()
+    
         except:
             print("Temperature read error during shutdown")
 
