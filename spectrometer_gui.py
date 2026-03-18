@@ -10,7 +10,7 @@ import numpy as np
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QLabel, QSpinBox, QCheckBox, 
                              QHBoxLayout
 )
-
+from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QTimer
 
 import pyqtgraph as pg
@@ -54,6 +54,9 @@ class SpectrometerGUI(QWidget):
         # shutdown timer (used when closing GUI)
         self.shutdown_timer = QTimer()
         self.shutdown_timer.timeout.connect(self.check_shutdown_temperature)
+        
+        # 新增：一个标志位，控制是否允许真正关闭
+        self.allow_exit = False
 
     # Init GUI
     def init_ui(self):
@@ -271,26 +274,26 @@ class SpectrometerGUI(QWidget):
             print("Temperature read error")
             
     def check_shutdown_temperature(self):
-    
-        try:
-            temp = self.device.get_temperature()
-            print(f"CCD temperature: {temp:.2f} °C")
-    
-            if temp > 0:
-    
-                print("CCD warmed up. Safe to close.")
-    
-                self.shutdown_timer.stop()
-    
-                print("Closing spectrometer hardware...")
+            try:
+                temp = self.device.get_temperature()
+                print(f"CCD temperature: {temp:.2f} °C")
+        
+                if temp > 0:
+                    print("CCD warmed up. Safe to close.")
+                    self.shutdown_timer.stop()
+                    
+                    # 关键：先彻底释放硬件资源
+                    self.device.close()
+                    
+                    # 关键：设置标志位并手动再次触发 closeEvent
+                    self.allow_exit = True
+                    self.close() 
+        
+            except Exception as e:
+                print(f"Temperature check error: {e}")
                 self.device.close()
-    
-                # 直接退出 GUI
-                from PyQt5.QtWidgets import QApplication
-                QApplication.quit()
-    
-        except:
-            print("Temperature read error during shutdown")
+                self.allow_exit = True
+                self.close()
 
 
     # def closeEvent(self, event):
@@ -312,45 +315,42 @@ class SpectrometerGUI(QWidget):
     #     event.accept()
     
     def closeEvent(self, event):
-
-        print("Shutting down spectrometer...")
-
-        try:
+            # 如果已经升温完成，直接放行
+            if self.allow_exit:
+                event.accept()
+                return
+    
+            print("Initiating safety shutdown...")
+            
+            # 停止采集和温度监控计时器
             self.acquire_timer.stop()
-        except:
-            pass
-
-        try:
             self.temp_timer.stop()
-        except:
-            pass
-
-        try:
-
-            print("Turning cooler off...")
-            self.device.set_cooler(False)
-
-            print("Waiting for CCD to warm up...")
-
-            # start monitoring temperature
-            self.shutdown_timer.start(5000)
-
-            # prevent GUI from closing immediately
-            event.ignore()
-
-        except:
-
-            print("Error during shutdown, closing device directly")
-
-            self.device.close()
-            event.accept()
+    
+            try:
+                # 1. 关掉制冷器
+                print("Turning cooler off...")
+                self.device.set_cooler(False)
+        
+                # 2. 修改界面标题提示用户
+                self.setWindowTitle("Warming up... DO NOT CLOSE")
+                
+                # 3. 启动 5s 一次的温度检查
+                if not self.shutdown_timer.isActive():
+                    self.shutdown_timer.start(5000)
+    
+                # 4. 关键：拦截关闭事件，保持 GUI 存活以运行计时器
+                event.ignore()
+    
+            except Exception as e:
+                print(f"Emergency close due to error: {e}")
+                self.device.close()
+                event.accept()
             
             
             
             
 if __name__ == "__main__":
 
-    from PyQt5.QtWidgets import QApplication
     import sys
 
     app = QApplication(sys.argv)
